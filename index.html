@@ -5,57 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#05070d" />
     <title>VERSE//ZERO</title>
-    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
     <canvas id="starfield" aria-hidden="true"></canvas>
     <div class="horizon" aria-hidden="true"></div>
     <div class="scanlines" aria-hidden="true"></div>
-
-    <main class="title-screen">
-      <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>Signal intercepted // origin unknown</p>
-
-      <h1 class="wordmark">
-        <span class="wordmark__verse">VERSE</span><span class="wordmark__slash" aria-hidden="true">//</span><span class="wordmark__zero">ZERO</span>
-      </h1>
-
-      <p class="tagline">
-        The network ends here. Something on the other side is still transmitting.
-      </p>
-
-      <nav class="menu" aria-label="Main menu">
-        <button class="menu-item menu-item--primary" type="button" data-action="enter">
-          <span class="menu-item__mark" aria-hidden="true">▶</span>Enter the Verse
-        </button>
-        <button class="menu-item" type="button" data-action="how">
-          <span class="menu-item__mark" aria-hidden="true">▸</span>How to Play
-        </button>
-        <button class="menu-item" type="button" data-action="credits">
-          <span class="menu-item__mark" aria-hidden="true">▸</span>Credits
-        </button>
-      </nav>
-
-      <p class="status" role="status" aria-live="polite">
-        <span class="status__prompt">Awaiting input</span>
-      </p>
-
-      <footer class="meta">
-        <span>Build 0.1 // title screen</span>
-        <span>No save data</span>
-      </footer>
-    </main>
-
-    <dialog class="panel" id="panel" aria-labelledby="panel-title">
-      <form method="dialog" class="panel__form">
-        <p class="panel__kicker" id="panel-kicker">Briefing</p>
-        <h2 class="panel__title" id="panel-title">How to Play</h2>
-        <div class="panel__body" id="panel-body"></div>
-        <button class="menu-item menu-item--primary panel__close" type="submit" value="close">
-          <span class="menu-item__mark" aria-hidden="true">◀</span>Back to title
-        </button>
-      </form>
-    </dialog>
-
+    <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
