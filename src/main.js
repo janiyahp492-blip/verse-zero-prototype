@@ -4,6 +4,7 @@ import { mountStarfield } from "./starfield.js";
 import { renderTitle } from "./screens/title.js";
 import { renderSettings } from "./screens/settings.js";
 import { renderCharacter } from "./screens/character.js";
+import { renderLevel } from "./screens/level.js";
 
 applyPrefs();
 mountStarfield(document.querySelector("#starfield"));
@@ -14,6 +15,7 @@ const routes = {
   "/": { render: renderTitle, title: "VERSE//ZERO" },
   "/settings": { render: renderSettings, title: "Settings // VERSE//ZERO" },
   "/character": { render: renderCharacter, title: "Choose your fighter // VERSE//ZERO" },
+  "/level": { render: renderLevel, title: "Chapter 01 // VERSE//ZERO" },
 };
 
 let cleanup = null;
