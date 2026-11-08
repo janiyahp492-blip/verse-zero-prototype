@@ -4,8 +4,10 @@ import { fighterFigureMarkup } from "../data/figure.js";
 import { getSelectedFighterId } from "../session.js";
 import { getPrefs } from "../preferences.js";
 
-const ROUND_MS = 60000;
-const INTRO_MS = 1700;
+const ROUND_MS = 99000;
+const ROUNDS_TO_WIN = 2;
+const INTRO_MS = 1600;
+const ROUND_GAP_MS = 2300;
 const MAX_HP = 100;
 const MOVE_SPEED = 30;
 const MIN_X = 12;
@@ -19,8 +21,8 @@ const MOVES = {
 };
 
 const RIVAL_MOVES = {
-  punch: { range: 21, damage: 8, windup: 380 },
-  kick: { range: 27, damage: 12, windup: 540 },
+  punch: { range: 21, damage: 8, windup: 430, cls: "is-punch" },
+  kick: { range: 27, damage: 12, windup: 620, cls: "is-kick" },
 };
 
 function pickRival(fighter) {
@@ -83,11 +85,11 @@ function briefingMarkup(fighter, rival) {
           <ol class="brief__objectives">
             <li><span>01</span>Close the distance and land the first strike</li>
             <li><span>02</span>Break ${rival.name}'s guard before the clock runs out</li>
-            <li><span>03</span>Finish the round standing</li>
+            <li><span>03</span>Take two rounds to claim the relay</li>
           </ol>
           <dl class="brief__meta">
-            <div><dt>Round</dt><dd>60 sec</dd></div>
-            <div><dt>Rule</dt><dd>K.O.</dd></div>
+            <div><dt>Format</dt><dd>Best of 3</dd></div>
+            <div><dt>Clock</dt><dd>99 sec</dd></div>
             <div><dt>Stage</dt><dd>Sector 07</dd></div>
           </dl>
           <button class="deploy" id="deploy" type="button">Fight<span aria-hidden="true">→</span></button>
@@ -96,6 +98,10 @@ function briefingMarkup(fighter, rival) {
       </div>
     </section>
   `;
+}
+
+function winPipsMarkup(side) {
+  return `<div class="sf-wins" id="wins-${side}" aria-hidden="true">${"<i></i>".repeat(ROUNDS_TO_WIN)}</div>`;
 }
 
 function stageMarkup(fighter, rival) {
@@ -111,10 +117,12 @@ function stageMarkup(fighter, rival) {
           </div>
           <div class="hp" id="hp-p1" role="progressbar" aria-label="${fighter.name} vitality" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i></i></div>
           <div class="meter" id="meter-p1" aria-hidden="true"><i></i></div>
+          ${winPipsMarkup("p1")}
         </div>
         <div class="sf-center">
           <span class="sf-center__label">Time</span>
           <span class="sf-center__timer" id="timer">99</span>
+          <span class="sf-center__round" id="round-tag">R1</span>
         </div>
         <div class="sf-side sf-side--rival">
           <div class="sf-side__top">
@@ -123,6 +131,7 @@ function stageMarkup(fighter, rival) {
           </div>
           <div class="hp hp--rival" id="hp-p2" role="progressbar" aria-label="${rival.name} vitality" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i></i></div>
           <div class="meter meter--ready" aria-hidden="true"><i></i></div>
+          ${winPipsMarkup("p2")}
         </div>
       </div>
 
@@ -177,15 +186,20 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
   const hpP2Fill = hpP2.querySelector("i");
   const meterFill = root.querySelector("#meter-p1 i");
   const timerEl = root.querySelector("#timer");
+  const roundTag = root.querySelector("#round-tag");
   const comboEl = root.querySelector("#combo");
   const announceEl = root.querySelector("#announce");
   const resultHost = root.querySelector("#result-host");
   const blockBtn = root.querySelector("[data-block]");
   const superBtn = root.querySelector("#super-btn");
+  const winPips = {
+    p1: Array.from(root.querySelectorAll("#wins-p1 i")),
+    p2: Array.from(root.querySelectorAll("#wins-p2 i")),
+  };
   const reduceMotion = getPrefs().motion === "reduced";
 
   let playerX = 32;
-  let rivalX = 32 + 24;
+  let rivalX = 56;
   let hp = MAX_HP;
   let rivalHp = MAX_HP;
   let meter = 0;
@@ -193,19 +207,38 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
   let bestCombo = 0;
   let combo = 0;
   let comboTimer = 0;
-  let elapsed = 0;
+  let roundElapsed = 0;
+  let round = 1;
+  let wins = { p1: 0, p2: 0 };
+  let perfectRound = true;
   let phase = "intro";
   let ended = false;
   let moveDir = 0;
+  let rivalMoving = false;
   let blocking = false;
   let attackCooldown = 0;
-  let rivalTimer = 700;
+  let rivalTimer = 900;
   let rivalWindup = 0;
   let rivalRecover = 0;
   let rivalMove = null;
   let last = performance.now();
   let raf = 0;
+  let announceToken = 0;
   const timers = new Set();
+
+  const FIGHT_STATES = [
+    "is-punch",
+    "is-kick",
+    "is-super",
+    "is-strike",
+    "is-windup",
+    "is-hurt",
+    "is-flash",
+    "is-blocking",
+    "is-down",
+    "is-victory",
+    "is-advancing",
+  ];
 
   function later(fn, ms) {
     const id = window.setTimeout(() => {
@@ -228,14 +261,30 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     hpP2.setAttribute("aria-valuenow", String(Math.round(rivalHp)));
     meterFill.style.width = `${meter}%`;
     superBtn.classList.toggle("is-ready", meter >= 100);
+    p1.classList.toggle("is-low", hp <= MAX_HP * 0.25);
+    p2.classList.toggle("is-low", rivalHp <= MAX_HP * 0.25);
   }
 
-  function announce(text, extra = "") {
+  function drawWins() {
+    winPips.p1.forEach((pip, index) => pip.classList.toggle("is-won", index < wins.p1));
+    winPips.p2.forEach((pip, index) => pip.classList.toggle("is-won", index < wins.p2));
+  }
+
+  function clearFightStates() {
+    FIGHT_STATES.forEach((cls) => {
+      p1.classList.remove(cls);
+      p2.classList.remove(cls);
+    });
+    blockBtn.setAttribute("aria-pressed", "false");
+  }
+
+  function announce(text, extra = "", hold = 950) {
+    const token = ++announceToken;
     announceEl.textContent = text;
     announceEl.className = `arena__announce is-on ${extra}`;
     later(() => {
-      announceEl.className = "arena__announce";
-    }, 900);
+      if (token === announceToken) announceEl.className = "arena__announce";
+    }, hold);
   }
 
   function shake() {
@@ -269,7 +318,15 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     later(() => comboEl.classList.remove("is-on"), 750);
   }
 
+  function flash(duelist) {
+    duelist.classList.remove("is-flash");
+    void duelist.offsetWidth;
+    duelist.classList.add("is-flash");
+    later(() => duelist.classList.remove("is-flash"), 110);
+  }
+
   function damageRival(amount, gain) {
+    if (phase !== "fight") return;
     rivalHp = Math.max(0, rivalHp - amount);
     hits += 1;
     combo = comboTimer > 0 ? combo + 1 : 1;
@@ -279,27 +336,31 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     drawBars();
     floatDamage(rivalX, amount, "player");
     spark(rivalX, "hit");
+    flash(p2);
     shake();
     p2.classList.add("is-hurt");
-    later(() => p2.classList.remove("is-hurt"), 220);
+    later(() => p2.classList.remove("is-hurt"), 240);
     if (combo >= 2) showCombo();
-    if (rivalHp <= 0) finish("win");
+    if (rivalHp <= 0) endRound("win", "ko");
   }
 
   function damagePlayer(amount) {
+    if (phase !== "fight") return;
     const dealt = blocking ? Math.max(1, Math.round(amount * 0.15)) : amount;
     hp = Math.max(0, hp - dealt);
+    perfectRound = false;
     meter = Math.min(100, meter + Math.max(3, Math.round(dealt * 0.9)));
     combo = 0;
     drawBars();
     floatDamage(playerX, dealt, blocking ? "block" : "rival");
     spark(playerX, blocking ? "block" : "hit");
     if (!blocking) {
+      flash(p1);
       shake();
       p1.classList.add("is-hurt");
-      later(() => p1.classList.remove("is-hurt"), 220);
+      later(() => p1.classList.remove("is-hurt"), 240);
     }
-    if (hp <= 0) finish("lose");
+    if (hp <= 0) endRound("lose", "ko");
   }
 
   function playerAttack(kind) {
@@ -314,15 +375,15 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     if (attackCooldown > 0) return;
     attackCooldown = move.cooldown;
     p1.classList.add(move.cls);
-    later(() => p1.classList.remove(move.cls), 260);
+    later(() => p1.classList.remove(move.cls), 300);
 
     if (kind === "super") {
       meter = 0;
       arena.classList.add("is-super");
       later(() => arena.classList.remove("is-super"), 900);
       p1.classList.add("is-super");
-      later(() => p1.classList.remove("is-super"), 460);
-      announce("SUPER FLASH!", "is-super");
+      later(() => p1.classList.remove("is-super"), 480);
+      announce("SUPER FLASH!", "is-super", 760);
     }
 
     const distance = Math.abs(rivalX - playerX);
@@ -341,16 +402,23 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     const distance = Math.abs(rivalX - playerX);
     if (rivalMove && distance <= rivalMove.range) {
       p2.classList.add("is-strike");
-      later(() => p2.classList.remove("is-strike"), 220);
+      later(() => p2.classList.remove("is-strike"), 240);
       damagePlayer(rivalMove.damage);
     }
     rivalMove = null;
-    rivalRecover = 420;
-    rivalTimer = 800 + Math.random() * 700;
+    rivalRecover = 430;
+    rivalTimer = 900 + Math.random() * 800;
+    // Later rounds get chained pressure so the CPU feels like a real opponent.
+    if (round >= 2 && Math.random() < 0.32) {
+      later(() => {
+        if (phase === "fight" && Math.abs(rivalX - playerX) <= 27) startRivalAttack("punch");
+      }, 260);
+    }
   }
 
   function rivalTick(dt) {
     const distance = Math.abs(rivalX - playerX);
+    rivalMoving = false;
 
     if (rivalRecover > 0) {
       rivalRecover -= dt * 1000;
@@ -364,9 +432,11 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     }
 
     if (distance > 18) {
-      rivalX -= Math.sign(rivalX - playerX) * 20 * dt;
+      rivalX -= Math.sign(rivalX - playerX) * 21 * dt;
+      rivalMoving = true;
     } else if (distance < 12) {
       rivalX += Math.sign(rivalX - playerX) * 16 * dt;
+      rivalMoving = true;
     }
 
     rivalTimer -= dt * 1000;
@@ -378,17 +448,95 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     rivalX = Math.min(88, Math.max(16, rivalX));
   }
 
-  function finish(outcome) {
+  function resetPositions() {
+    playerX = 32;
+    rivalX = 56;
+    place();
+  }
+
+  function startRound(nextRound) {
+    if (ended) return;
+    round = nextRound;
+    hp = MAX_HP;
+    rivalHp = MAX_HP;
+    combo = 0;
+    comboTimer = 0;
+    roundElapsed = 0;
+    perfectRound = true;
+    attackCooldown = 0;
+    moveDir = 0;
+    blocking = false;
+    rivalMoving = false;
+    rivalTimer = 900 + Math.random() * 400;
+    rivalWindup = 0;
+    rivalRecover = 0;
+    rivalMove = null;
+    clearFightStates();
+    resetPositions();
+    drawBars();
+    roundTag.textContent = `R${nextRound}`;
+    timerEl.textContent = "99";
+    phase = "intro";
+    announce(`ROUND ${nextRound}`, "is-round", 900);
+    later(() => {
+      if (!ended && phase === "intro") announce("FIGHT!", "is-fight", 800);
+    }, 820);
+    later(() => {
+      if (!ended && phase === "intro") phase = "fight";
+    }, INTRO_MS);
+  }
+
+  function endRound(outcome, reason) {
+    if (phase !== "fight") return;
+    phase = "roundOver";
+    attackCooldown = 0;
+    rivalWindup = 0;
+    rivalMove = null;
+    rivalRecover = 0;
+    moveDir = 0;
+    rivalMoving = false;
+    blocking = false;
+    p1.classList.remove("is-blocking");
+    p1.classList.remove("is-advancing");
+    p2.classList.remove("is-advancing", "is-windup");
+
+    if (outcome === "win") wins.p1 += 1;
+    if (outcome === "lose") wins.p2 += 1;
+    drawWins();
+
+    const loser = outcome === "win" ? p2 : outcome === "lose" ? p1 : null;
+    if (loser) loser.classList.add("is-down");
+
+    announce(reason === "time" ? "TIME UP" : "K.O.", reason === "time" ? "is-timeup" : "is-fight", 1150);
+    if (outcome === "win" && perfectRound) {
+      later(() => announce("PERFECT!", "is-perfect", 1100), 780);
+    }
+
+    later(() => {
+      if (ended) return;
+      if (wins.p1 >= ROUNDS_TO_WIN || wins.p2 >= ROUNDS_TO_WIN) endMatch();
+      else if (outcome === "draw") startRound(round);
+      else startRound(round + 1);
+    }, ROUND_GAP_MS);
+  }
+
+  function endMatch() {
     if (ended) return;
     ended = true;
     phase = "over";
     cancelAnimationFrame(raf);
     detach();
-    p1.classList.remove("is-hurt", "is-blocking", "is-punch", "is-kick", "is-super");
-    p2.classList.remove("is-hurt", "is-windup", "is-strike");
-    blocking = false;
-    announce(outcome === "draw" ? "TIME UP" : "K.O.", outcome === "win" ? "is-fight" : "");
-    later(() => showResult(outcome), 750);
+
+    const outcome = wins.p1 > wins.p2 ? "win" : wins.p2 > wins.p1 ? "lose" : "draw";
+    clearFightStates();
+    p1.classList.add(outcome === "win" ? "is-victory" : "is-down");
+    p2.classList.add(outcome === "lose" ? "is-victory" : "is-down");
+    announce(
+      outcome === "win" ? "YOU WIN" : outcome === "lose" ? "YOU LOSE" : "DRAW",
+      outcome === "win" ? "is-fight" : "is-timeup",
+      1300,
+    );
+    later(() => showResult(outcome), 1500);
   }
 
   function showResult(outcome) {
@@ -401,23 +549,23 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     result.setAttribute("aria-labelledby", "result-title");
     result.innerHTML = `
       <div class="result__panel" tabindex="-1">
-        <p class="result__kicker">${won ? "Round cleared" : draw ? "Time up" : "Round lost"}</p>
+        <p class="result__kicker">${won ? "Match cleared" : draw ? "Time up" : "Match lost"}</p>
         <h2 class="result__title" id="result-title">
           ${won ? `K.O. — ${fighter.name} wins` : draw ? "Dead even" : `K.O. — ${rival.name} wins`}
         </h2>
         <p class="result__copy">
           ${
             won
-              ? `${rival.name} is down. The relay answers to your signal, and chapter two is already broadcasting.`
+              ? `${rival.name} is down two rounds to ${wins.p2}. The relay answers to your signal, and chapter two is already broadcasting.`
               : draw
                 ? "The clock beat you both. The relay stayed dark and the rematch is yours to call."
-                : `${rival.name} held the relay. Watch the wind-up, block the kick, and take the rematch.`
+                : `${rival.name} held the relay ${wins.p2} rounds to ${wins.p1}. Watch the wind-up, block the kick, and take the rematch.`
           }
         </p>
         <dl class="result__stats">
+          <div><dt>Rounds</dt><dd>${wins.p1} – ${wins.p2}</dd></div>
           <div><dt>Hits</dt><dd>${hits}</dd></div>
           <div><dt>Best combo</dt><dd>${bestCombo}</dd></div>
-          <div><dt>Vitals</dt><dd>${Math.max(0, Math.round(hp))}</dd></div>
         </dl>
         <div class="result__actions">
           <button class="deploy" id="retry" type="button">Rematch</button>
@@ -446,7 +594,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     last = now;
 
     if (phase === "fight") {
-      elapsed += dt * 1000;
+      roundElapsed += dt * 1000;
 
       if (attackCooldown > 0) attackCooldown -= dt * 1000;
       if (comboTimer > 0) comboTimer -= dt * 1000;
@@ -461,12 +609,14 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
       }
 
       place();
+      p1.classList.toggle("is-advancing", moveDir !== 0);
+      p2.classList.toggle("is-advancing", rivalMoving);
 
-      const seconds = Math.max(0, Math.ceil((1 - elapsed / ROUND_MS) * 99));
+      const seconds = Math.max(0, Math.ceil((1 - roundElapsed / ROUND_MS) * 99));
       if (timerEl.textContent !== String(seconds)) timerEl.textContent = String(seconds);
 
-      if (elapsed >= ROUND_MS) {
-        finish(rivalHp === hp ? "draw" : rivalHp > hp ? "lose" : "win");
+      if (roundElapsed >= ROUND_MS) {
+        endRound(rivalHp === hp ? "draw" : rivalHp > hp ? "lose" : "win", "time");
         return;
       }
     }
@@ -576,13 +726,8 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
 
-  place();
-  drawBars();
-  announce("ROUND 1");
-  later(() => announce("FIGHT!", "is-fight"), 850);
-  later(() => {
-    if (!ended) phase = "fight";
-  }, INTRO_MS);
+  drawWins();
+  startRound(1);
 
   raf = requestAnimationFrame((now) => {
     last = now;
