@@ -1,21 +1,39 @@
 import "./level.css";
 import { FIGHTERS, getFighter, portraitMarkup } from "../data/fighters.js";
+import { fighterFigureMarkup } from "../data/figure.js";
 import { getSelectedFighterId } from "../session.js";
 import { getPrefs } from "../preferences.js";
 
-const RUN_MS = 20000;
-const SCROLL_SPEED = 42;
-const HIT_X = 16;
-const SPAWN_MS = 1000;
-const START_INTEGRITY = 3;
-const LANE_TOP = [24, 48, 72];
+const ROUND_MS = 60000;
+const INTRO_MS = 1700;
+const MAX_HP = 100;
+const MOVE_SPEED = 30;
+const MIN_X = 12;
+const MAX_X = 80;
+const MIN_GAP = 11;
 
-function runnerCardMarkup(fighter) {
+const MOVES = {
+  punch: { range: 20, damage: 8, cooldown: 300, meter: 12, cls: "is-punch" },
+  kick: { range: 26, damage: 13, cooldown: 560, meter: 15, cls: "is-kick" },
+  super: { range: 32, damage: 30, cooldown: 1200, meter: 0, cls: "is-super" },
+};
+
+const RIVAL_MOVES = {
+  punch: { range: 21, damage: 8, windup: 380 },
+  kick: { range: 27, damage: 12, windup: 540 },
+};
+
+function pickRival(fighter) {
+  const index = FIGHTERS.findIndex((entry) => entry.id === fighter.id);
+  return FIGHTERS[(index + 2) % FIGHTERS.length];
+}
+
+function fighterCardMarkup(fighter) {
   return `
     <aside class="runner-card">
       <div class="runner-card__art">${portraitMarkup(fighter, "runner")}</div>
       <div class="runner-card__meta">
-        <p class="runner-card__kicker">Runner locked</p>
+        <p class="runner-card__kicker">1P // locked in</p>
         <h2 class="runner-card__name">${fighter.name}</h2>
         <p class="runner-card__role">${fighter.role}</p>
         <a class="runner-card__swap" href="#/character">Swap fighter</a>
@@ -24,82 +42,124 @@ function runnerCardMarkup(fighter) {
   `;
 }
 
-function briefingMarkup(fighter) {
+function versusMarkup(fighter, rival) {
+  return `
+    <div class="versus">
+      <div class="versus__slot">
+        ${portraitMarkup(fighter, "vs-p1")}
+        <span class="versus__tag">1P</span>
+        <strong class="versus__name">${fighter.name}</strong>
+      </div>
+      <span class="versus__mark" aria-hidden="true">VS</span>
+      <div class="versus__slot versus__slot--rival">
+        ${portraitMarkup(rival, "vs-p2")}
+        <span class="versus__tag">CPU</span>
+        <strong class="versus__name">${rival.name}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function briefingMarkup(fighter, rival) {
   return `
     <section class="chapter" aria-labelledby="chapter-title">
       <header class="chapter__head">
         <a class="chapter__back" href="#/character">◀ Fighter select</a>
         <div class="chapter__intro">
-          <p class="chapter__kicker"><span class="pulse" aria-hidden="true"></span>Chapter 01 // dead signal</p>
+          <p class="chapter__kicker"><span class="pulse" aria-hidden="true"></span>Chapter 01 // first bout</p>
           <h1 class="chapter__title" id="chapter-title">The last <em>route</em></h1>
-          <p class="chapter__sub">Sector 07. A relay that went dark eleven years ago is still broadcasting — and it is using your name.</p>
+          <p class="chapter__sub">Sector 07. The relay that went dark eleven years ago is broadcasting again — and someone already took the stage to answer it.</p>
         </div>
         <div class="chapter__num" aria-hidden="true">01</div>
       </header>
 
       <div class="chapter__grid">
-        ${runnerCardMarkup(fighter)}
+        ${fighterCardMarkup(fighter)}
         <div class="brief">
-          <p class="brief__kicker">Mission briefing</p>
-          <h2 class="brief__title">Reach the relay</h2>
-          <p class="brief__copy">Cross the dead corridor before the firewall seals it. Every signal node you scoop up is another piece of the transmission.</p>
+          <p class="brief__kicker">Bout briefing</p>
+          <h2 class="brief__title">Duel for the relay</h2>
+          ${versusMarkup(fighter, rival)}
+          <p class="brief__copy">${rival.name} reached the relay first and is holding the signal. Break their guard, empty the vitality bar, and the transmission is yours.</p>
           <ol class="brief__objectives">
-            <li><span>01</span>Survive the firewall corridor</li>
-            <li><span>02</span>Collect signal nodes for score</li>
-            <li><span>03</span>Reach the relay beacon</li>
+            <li><span>01</span>Close the distance and land the first strike</li>
+            <li><span>02</span>Break ${rival.name}'s guard before the clock runs out</li>
+            <li><span>03</span>Finish the round standing</li>
           </ol>
           <dl class="brief__meta">
-            <div><dt>Threat</dt><dd>Elevated</dd></div>
-            <div><dt>Distance</dt><dd>2.4 km</dd></div>
-            <div><dt>Run</dt><dd>20 sec</dd></div>
+            <div><dt>Round</dt><dd>60 sec</dd></div>
+            <div><dt>Rule</dt><dd>K.O.</dd></div>
+            <div><dt>Stage</dt><dd>Sector 07</dd></div>
           </dl>
-          <button class="deploy" id="deploy" type="button">Deploy<span aria-hidden="true">→</span></button>
-          <p class="brief__hint">Arrow keys or W / S switch lanes. Tap the lane buttons on touch screens.</p>
+          <button class="deploy" id="deploy" type="button">Fight<span aria-hidden="true">→</span></button>
+          <p class="brief__hint">Move with ← → / A D · J punch · K kick · hold L to block · Space for super.</p>
         </div>
       </div>
     </section>
   `;
 }
 
-function stageMarkup(fighter) {
+function stageMarkup(fighter, rival) {
   return `
     <section class="stage" aria-labelledby="stage-title">
-      <h1 class="visually-hidden" id="stage-title">Chapter one — the last route</h1>
+      <h1 class="visually-hidden" id="stage-title">Chapter one — duel for the relay</h1>
 
-      <header class="stage__hud">
-        <div class="hud__block">
-          <span class="hud__label">Runner</span>
-          <strong class="hud__value">${fighter.name}</strong>
+      <div class="sf-hud">
+        <div class="sf-side">
+          <div class="sf-side__top">
+            <span class="sf-side__tag">1P</span>
+            <strong class="sf-side__name">${fighter.name}</strong>
+          </div>
+          <div class="hp" id="hp-p1" role="progressbar" aria-label="${fighter.name} vitality" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i></i></div>
+          <div class="meter" id="meter-p1" aria-hidden="true"><i></i></div>
         </div>
-        <div class="hud__block">
-          <span class="hud__label">Integrity</span>
-          <div class="hearts" id="hearts" aria-label="Integrity 3 of 3"></div>
+        <div class="sf-center">
+          <span class="sf-center__label">Time</span>
+          <span class="sf-center__timer" id="timer">99</span>
         </div>
-        <div class="hud__block hud__block--progress">
-          <span class="hud__label">Route progress</span>
-          <div class="progress" role="progressbar" aria-label="Route progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progress"></i></div>
-        </div>
-        <div class="hud__block hud__block--signals">
-          <span class="hud__label">Signals</span>
-          <strong class="hud__value" id="signals">0</strong>
-        </div>
-        <button class="stage__abort" id="abort" type="button">Abort</button>
-      </header>
-
-      <div class="track" id="track">
-        <div class="track__sky" aria-hidden="true"></div>
-        <div class="track__speed" aria-hidden="true"></div>
-        <div class="track__floor" aria-hidden="true"></div>
-        <div class="track__beacon" aria-hidden="true"><span>Relay</span></div>
-        <div class="runner-token" id="player" style="--lane:1">
-          <div class="runner-token__art">${portraitMarkup(fighter, "token")}</div>
-          <span class="runner-token__tag">${fighter.name}</span>
+        <div class="sf-side sf-side--rival">
+          <div class="sf-side__top">
+            <strong class="sf-side__name">${rival.name}</strong>
+            <span class="sf-side__tag">CPU</span>
+          </div>
+          <div class="hp hp--rival" id="hp-p2" role="progressbar" aria-label="${rival.name} vitality" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i></i></div>
+          <div class="meter meter--ready" aria-hidden="true"><i></i></div>
         </div>
       </div>
 
-      <div class="lane-controls">
-        <button class="lane-btn" data-direction="up" type="button"><span aria-hidden="true">▲</span>Lane</button>
-        <button class="lane-btn" data-direction="down" type="button"><span aria-hidden="true">▼</span>Lane</button>
+      <div class="arena" id="arena" aria-label="Sector 07 duel arena">
+        <div class="arena__sky" aria-hidden="true">
+          <span class="arena__sun"></span>
+          <span class="arena__lines"></span>
+        </div>
+        <div class="arena__city" aria-hidden="true"></div>
+        <div class="arena__floor" aria-hidden="true"></div>
+        <div class="arena__glow" aria-hidden="true"></div>
+
+        <div class="duelist duelist--p1" id="p1" style="--x:32">
+          ${fighterFigureMarkup(fighter)}
+          <span class="duelist__tag">1P</span>
+        </div>
+        <div class="duelist duelist--p2" id="p2" style="--x:56">
+          ${fighterFigureMarkup(rival)}
+          <span class="duelist__tag">CPU</span>
+        </div>
+
+        <div class="combo" id="combo" aria-live="polite"></div>
+        <div class="arena__announce" id="announce" aria-live="polite"></div>
+      </div>
+
+      <div class="fight-controls">
+        <div class="fight-controls__move">
+          <button class="pad-btn" data-move="back" type="button" aria-label="Step back">◀</button>
+          <button class="pad-btn" data-move="forward" type="button" aria-label="Step forward">▶</button>
+        </div>
+        <div class="fight-controls__actions">
+          <button class="act-btn" data-attack="punch" type="button">Punch<small>J</small></button>
+          <button class="act-btn" data-attack="kick" type="button">Kick<small>K</small></button>
+          <button class="act-btn" data-block type="button" aria-pressed="false">Block<small>L</small></button>
+          <button class="act-btn act-btn--super" data-attack="super" id="super-btn" type="button">Super<small>Space</small></button>
+        </div>
+        <button class="stage__abort" id="abort" type="button">Abort</button>
       </div>
 
       <div class="result-host" id="result-host"></div>
@@ -107,89 +167,233 @@ function stageMarkup(fighter) {
   `;
 }
 
-function runGame(root, fighter, { onBriefing, onRestart }) {
-  const track = root.querySelector("#track");
-  const player = root.querySelector("#player");
-  const progressEl = root.querySelector("#progress");
-  const signalsEl = root.querySelector("#signals");
-  const heartsEl = root.querySelector("#hearts");
+function runFight(root, fighter, rival, { onBriefing, onRestart }) {
+  const arena = root.querySelector("#arena");
+  const p1 = root.querySelector("#p1");
+  const p2 = root.querySelector("#p2");
+  const hpP1 = root.querySelector("#hp-p1");
+  const hpP2 = root.querySelector("#hp-p2");
+  const hpP1Fill = hpP1.querySelector("i");
+  const hpP2Fill = hpP2.querySelector("i");
+  const meterFill = root.querySelector("#meter-p1 i");
+  const timerEl = root.querySelector("#timer");
+  const comboEl = root.querySelector("#combo");
+  const announceEl = root.querySelector("#announce");
   const resultHost = root.querySelector("#result-host");
+  const blockBtn = root.querySelector("[data-block]");
+  const superBtn = root.querySelector("#super-btn");
   const reduceMotion = getPrefs().motion === "reduced";
 
-  let lane = 1;
-  let progress = 0;
-  let integrity = START_INTEGRITY;
-  let signals = 0;
-  let spawnIn = 700;
-  let last = performance.now();
+  let playerX = 32;
+  let rivalX = 32 + 24;
+  let hp = MAX_HP;
+  let rivalHp = MAX_HP;
+  let meter = 0;
+  let hits = 0;
+  let bestCombo = 0;
+  let combo = 0;
+  let comboTimer = 0;
+  let elapsed = 0;
+  let phase = "intro";
   let ended = false;
+  let moveDir = 0;
+  let blocking = false;
+  let attackCooldown = 0;
+  let rivalTimer = 700;
+  let rivalWindup = 0;
+  let rivalRecover = 0;
+  let rivalMove = null;
+  let last = performance.now();
   let raf = 0;
-  const items = [];
+  const timers = new Set();
 
-  function drawLane() {
-    player.style.setProperty("--lane", String(lane));
-    if (reduceMotion) player.style.transition = "none";
+  function later(fn, ms) {
+    const id = window.setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, ms);
+    timers.add(id);
+    return id;
   }
 
-  function drawHearts() {
-    heartsEl.innerHTML = Array.from(
-      { length: START_INTEGRITY },
-      (_, index) => `<span class="${index < integrity ? "on" : ""}" aria-hidden="true">◆</span>`,
-    ).join("");
-    heartsEl.setAttribute("aria-label", `Integrity ${integrity} of ${START_INTEGRITY}`);
+  function place() {
+    p1.style.setProperty("--x", playerX.toFixed(2));
+    p2.style.setProperty("--x", rivalX.toFixed(2));
   }
 
-  function moveLane(direction) {
-    if (ended) return;
-    const next = Math.min(2, Math.max(0, lane + direction));
-    if (next === lane) return;
-    lane = next;
-    drawLane();
+  function drawBars() {
+    hpP1Fill.style.width = `${(hp / MAX_HP) * 100}%`;
+    hpP2Fill.style.width = `${(rivalHp / MAX_HP) * 100}%`;
+    hpP1.setAttribute("aria-valuenow", String(Math.round(hp)));
+    hpP2.setAttribute("aria-valuenow", String(Math.round(rivalHp)));
+    meterFill.style.width = `${meter}%`;
+    superBtn.classList.toggle("is-ready", meter >= 100);
   }
 
-  function spawn() {
-    spawnIn = SPAWN_MS + Math.random() * 320;
-    const type = Math.random() < 0.34 ? "signal" : "hazard";
-    const busy = new Set(
-      items.filter((item) => !item.resolved && item.x > 26).map((item) => item.lane),
-    );
-    const open = [0, 1, 2].filter((laneIndex) => !busy.has(laneIndex));
-    if (open.length === 0) return;
-    const itemLane = open[Math.floor(Math.random() * open.length)];
-    const el = document.createElement("div");
-    el.className = `track-item track-item--${type} lane-${itemLane}`;
-    el.dataset.lane = String(itemLane);
-    el.innerHTML = `<span aria-hidden="true">${type === "signal" ? "◆" : "▲"}</span>`;
-    el.style.left = "114%";
-    track.appendChild(el);
-    items.push({ el, lane: itemLane, x: 114, type, resolved: false });
+  function announce(text, extra = "") {
+    announceEl.textContent = text;
+    announceEl.className = `arena__announce is-on ${extra}`;
+    later(() => {
+      announceEl.className = "arena__announce";
+    }, 900);
   }
 
-  function hit(item) {
-    integrity -= 1;
-    drawHearts();
-    item.el.classList.add("is-hit");
-    window.setTimeout(() => item.el.remove(), 220);
-    if (!reduceMotion) {
-      track.classList.remove("is-hit");
-      void track.offsetWidth;
-      track.classList.add("is-hit");
+  function shake() {
+    if (reduceMotion) return;
+    arena.classList.remove("is-shaking");
+    void arena.offsetWidth;
+    arena.classList.add("is-shaking");
+  }
+
+  function spark(x, kind) {
+    const el = document.createElement("span");
+    el.className = `fx__spark fx__spark--${kind}`;
+    el.style.left = `${x}%`;
+    el.style.bottom = "32%";
+    arena.appendChild(el);
+    later(() => el.remove(), 460);
+  }
+
+  function floatDamage(x, amount, tone) {
+    const el = document.createElement("span");
+    el.className = `fx__damage fx__damage--${tone}`;
+    el.textContent = `-${amount}`;
+    el.style.left = `${x}%`;
+    arena.appendChild(el);
+    later(() => el.remove(), 720);
+  }
+
+  function showCombo() {
+    comboEl.textContent = `${combo} HIT COMBO`;
+    comboEl.classList.add("is-on");
+    later(() => comboEl.classList.remove("is-on"), 750);
+  }
+
+  function damageRival(amount, gain) {
+    rivalHp = Math.max(0, rivalHp - amount);
+    hits += 1;
+    combo = comboTimer > 0 ? combo + 1 : 1;
+    bestCombo = Math.max(bestCombo, combo);
+    comboTimer = 1300;
+    meter = Math.min(100, meter + gain);
+    drawBars();
+    floatDamage(rivalX, amount, "player");
+    spark(rivalX, "hit");
+    shake();
+    p2.classList.add("is-hurt");
+    later(() => p2.classList.remove("is-hurt"), 220);
+    if (combo >= 2) showCombo();
+    if (rivalHp <= 0) finish("win");
+  }
+
+  function damagePlayer(amount) {
+    const dealt = blocking ? Math.max(1, Math.round(amount * 0.15)) : amount;
+    hp = Math.max(0, hp - dealt);
+    meter = Math.min(100, meter + Math.max(3, Math.round(dealt * 0.9)));
+    combo = 0;
+    drawBars();
+    floatDamage(playerX, dealt, blocking ? "block" : "rival");
+    spark(playerX, blocking ? "block" : "hit");
+    if (!blocking) {
+      shake();
+      p1.classList.add("is-hurt");
+      later(() => p1.classList.remove("is-hurt"), 220);
     }
-    if (integrity <= 0) end(false);
+    if (hp <= 0) finish("lose");
   }
 
-  function collect(item) {
-    signals += 1;
-    signalsEl.textContent = String(signals);
-    item.el.classList.add("is-collected");
-    window.setTimeout(() => item.el.remove(), 220);
+  function playerAttack(kind) {
+    if (phase !== "fight" || ended) return;
+    const move = MOVES[kind];
+    if (kind === "super" && meter < 100) {
+      superBtn.classList.remove("is-empty");
+      void superBtn.offsetWidth;
+      superBtn.classList.add("is-empty");
+      return;
+    }
+    if (attackCooldown > 0) return;
+    attackCooldown = move.cooldown;
+    p1.classList.add(move.cls);
+    later(() => p1.classList.remove(move.cls), 260);
+
+    if (kind === "super") {
+      meter = 0;
+      arena.classList.add("is-super");
+      later(() => arena.classList.remove("is-super"), 900);
+      p1.classList.add("is-super");
+      later(() => p1.classList.remove("is-super"), 460);
+      announce("SUPER FLASH!", "is-super");
+    }
+
+    const distance = Math.abs(rivalX - playerX);
+    if (distance > move.range) return;
+    damageRival(move.damage, move.meter);
   }
 
-  function end(won) {
+  function startRivalAttack(kind) {
+    rivalMove = RIVAL_MOVES[kind];
+    rivalWindup = rivalMove.windup;
+    p2.classList.add("is-windup");
+  }
+
+  function resolveRivalAttack() {
+    p2.classList.remove("is-windup");
+    const distance = Math.abs(rivalX - playerX);
+    if (rivalMove && distance <= rivalMove.range) {
+      p2.classList.add("is-strike");
+      later(() => p2.classList.remove("is-strike"), 220);
+      damagePlayer(rivalMove.damage);
+    }
+    rivalMove = null;
+    rivalRecover = 420;
+    rivalTimer = 800 + Math.random() * 700;
+  }
+
+  function rivalTick(dt) {
+    const distance = Math.abs(rivalX - playerX);
+
+    if (rivalRecover > 0) {
+      rivalRecover -= dt * 1000;
+      return;
+    }
+
+    if (rivalWindup > 0) {
+      rivalWindup -= dt * 1000;
+      if (rivalWindup <= 0) resolveRivalAttack();
+      return;
+    }
+
+    if (distance > 18) {
+      rivalX -= Math.sign(rivalX - playerX) * 20 * dt;
+    } else if (distance < 12) {
+      rivalX += Math.sign(rivalX - playerX) * 16 * dt;
+    }
+
+    rivalTimer -= dt * 1000;
+    if (rivalTimer <= 0) {
+      if (distance <= 27) startRivalAttack(distance <= 21 ? "punch" : "kick");
+      else rivalTimer = 180;
+    }
+
+    rivalX = Math.min(88, Math.max(16, rivalX));
+  }
+
+  function finish(outcome) {
     if (ended) return;
     ended = true;
+    phase = "over";
     cancelAnimationFrame(raf);
-    document.removeEventListener("keydown", onKey);
+    detach();
+    p1.classList.remove("is-hurt", "is-blocking", "is-punch", "is-kick", "is-super");
+    p2.classList.remove("is-hurt", "is-windup", "is-strike");
+    blocking = false;
+    announce(outcome === "draw" ? "TIME UP" : "K.O.", outcome === "win" ? "is-fight" : "");
+    later(() => showResult(outcome), 750);
+  }
+
+  function showResult(outcome) {
+    const won = outcome === "win";
+    const draw = outcome === "draw";
     const result = document.createElement("div");
     result.className = "result";
     result.setAttribute("role", "dialog");
@@ -197,22 +401,26 @@ function runGame(root, fighter, { onBriefing, onRestart }) {
     result.setAttribute("aria-labelledby", "result-title");
     result.innerHTML = `
       <div class="result__panel" tabindex="-1">
-        <p class="result__kicker">${won ? "Route cleared" : "Signal lost"}</p>
-        <h2 class="result__title" id="result-title">${won ? "Chapter one complete" : "Connection severed"}</h2>
+        <p class="result__kicker">${won ? "Round cleared" : draw ? "Time up" : "Round lost"}</p>
+        <h2 class="result__title" id="result-title">
+          ${won ? `K.O. — ${fighter.name} wins` : draw ? "Dead even" : `K.O. — ${rival.name} wins`}
+        </h2>
         <p class="result__copy">
           ${
             won
-              ? `${fighter.name} reached the relay with ${integrity} integrity left. The transmission is waiting in chapter two.`
-              : "The firewall took the last of your signal. Re-route and try again."
+              ? `${rival.name} is down. The relay answers to your signal, and chapter two is already broadcasting.`
+              : draw
+                ? "The clock beat you both. The relay stayed dark and the rematch is yours to call."
+                : `${rival.name} held the relay. Watch the wind-up, block the kick, and take the rematch.`
           }
         </p>
         <dl class="result__stats">
-          <div><dt>Signals</dt><dd>${signals}</dd></div>
-          <div><dt>Integrity</dt><dd>${integrity}/${START_INTEGRITY}</dd></div>
-          <div><dt>Route</dt><dd>${Math.round(progress)}%</dd></div>
+          <div><dt>Hits</dt><dd>${hits}</dd></div>
+          <div><dt>Best combo</dt><dd>${bestCombo}</dd></div>
+          <div><dt>Vitals</dt><dd>${Math.max(0, Math.round(hp))}</dd></div>
         </dl>
         <div class="result__actions">
-          <button class="deploy" id="retry" type="button">Run again</button>
+          <button class="deploy" id="retry" type="button">Rematch</button>
           <button class="menu-item" id="briefing" type="button">
             <span class="menu-item__mark" aria-hidden="true">◀</span>Back to briefing
           </button>
@@ -237,67 +445,145 @@ function runGame(root, fighter, { onBriefing, onRestart }) {
     const dt = Math.min((now - last) / 1000, 0.06);
     last = now;
 
-    progress = Math.min(100, progress + (dt * 1000 * 100) / RUN_MS);
-    progressEl.style.width = `${progress}%`;
-    progressEl.parentElement.setAttribute("aria-valuenow", String(Math.round(progress)));
+    if (phase === "fight") {
+      elapsed += dt * 1000;
 
-    spawnIn -= dt * 1000;
-    if (spawnIn <= 0) spawn();
+      if (attackCooldown > 0) attackCooldown -= dt * 1000;
+      if (comboTimer > 0) comboTimer -= dt * 1000;
+      else combo = 0;
 
-    for (const item of items) {
-      item.x -= SCROLL_SPEED * dt;
-      item.el.style.left = `${item.x}%`;
+      playerX = Math.min(MAX_X, Math.max(MIN_X, playerX + moveDir * MOVE_SPEED * dt));
+      rivalTick(dt);
 
-      if (item.resolved) continue;
-      const near = Math.abs(item.x - HIT_X) < 5.5;
-      if (!near || item.lane !== lane) continue;
-      item.resolved = true;
-      if (item.type === "hazard") hit(item);
-      else collect(item);
-      if (ended) return;
-    }
+      if (Math.abs(rivalX - playerX) < MIN_GAP) {
+        const dir = rivalX >= playerX ? 1 : -1;
+        rivalX = Math.min(88, Math.max(16, playerX + dir * MIN_GAP));
+      }
 
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      if (items[index].x < -14) {
-        items[index].el.remove();
-        items.splice(index, 1);
+      place();
+
+      const seconds = Math.max(0, Math.ceil((1 - elapsed / ROUND_MS) * 99));
+      if (timerEl.textContent !== String(seconds)) timerEl.textContent = String(seconds);
+
+      if (elapsed >= ROUND_MS) {
+        finish(rivalHp === hp ? "draw" : rivalHp > hp ? "lose" : "win");
+        return;
       }
     }
 
-    if (progress >= 100) {
-      end(true);
-      return;
-    }
-    raf = requestAnimationFrame(frame);
+    if (!ended) raf = requestAnimationFrame(frame);
   }
 
-  function onKey(event) {
-    if (ended) return;
-    if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
+  function setBlocking(on) {
+    if (on && phase !== "fight") on = false;
+    blocking = on;
+    p1.classList.toggle("is-blocking", on);
+    blockBtn.setAttribute("aria-pressed", String(on));
+  }
+
+  function onKeyDown(event) {
+    const key = event.key.toLowerCase();
+    if (["arrowleft", "arrowright", "a", "d", "j", "k", "l", "z", "x", "c", " "].includes(key)) {
       event.preventDefault();
-      moveLane(-1);
-    } else if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
-      event.preventDefault();
-      moveLane(1);
-    } else if (event.key === "Escape") {
+    }
+    if (phase === "over" || event.repeat) return;
+
+    if (key === "arrowleft" || key === "a") moveDir = -1;
+    else if (key === "arrowright" || key === "d") moveDir = 1;
+    else if (key === "j" || key === "z") playerAttack("punch");
+    else if (key === "k" || key === "x") playerAttack("kick");
+    else if (key === "l" || key === "c" || key === "shift") setBlocking(true);
+    else if (key === " ") playerAttack("super");
+    else if (key === "escape") {
       stop();
       onBriefing();
     }
   }
 
-  root.querySelectorAll(".lane-btn").forEach((button) => {
-    button.addEventListener("click", () => moveLane(button.dataset.direction === "up" ? -1 : 1));
+  function onKeyUp(event) {
+    const key = event.key.toLowerCase();
+    if (key === "arrowleft" || key === "a" || key === "arrowright" || key === "d") moveDir = 0;
+    if (key === "l" || key === "c" || key === "shift") setBlocking(false);
+  }
+
+  const moveButtons = Array.from(root.querySelectorAll("[data-move]"));
+  const cleanupMove = [];
+
+  moveButtons.forEach((button) => {
+    const dir = button.dataset.move === "forward" ? 1 : -1;
+    const press = (event) => {
+      event.preventDefault();
+      if (phase !== "fight") return;
+      moveDir = dir;
+    };
+    const release = () => {
+      if (moveDir === dir) moveDir = 0;
+    };
+    button.addEventListener("pointerdown", press);
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointerleave", release);
+    button.addEventListener("pointercancel", release);
+    cleanupMove.push(() => {
+      button.removeEventListener("pointerdown", press);
+      button.removeEventListener("pointerup", release);
+      button.removeEventListener("pointerleave", release);
+      button.removeEventListener("pointercancel", release);
+    });
+  });
+
+  const blockDown = (event) => {
+    event.preventDefault();
+    setBlocking(true);
+  };
+  const blockUp = () => setBlocking(false);
+  blockBtn.addEventListener("pointerdown", blockDown);
+  blockBtn.addEventListener("pointerup", blockUp);
+  blockBtn.addEventListener("pointerleave", blockUp);
+  blockBtn.addEventListener("pointercancel", blockUp);
+
+  const attackButtons = Array.from(root.querySelectorAll("[data-attack]"));
+  const attackHandlers = attackButtons.map((button) => {
+    const handler = () => playerAttack(button.dataset.attack);
+    button.addEventListener("click", handler);
+    return [button, handler];
   });
 
   function stop() {
     ended = true;
+    phase = "over";
     cancelAnimationFrame(raf);
-    document.removeEventListener("keydown", onKey);
+    detach();
   }
 
-  document.addEventListener("keydown", onKey);
-  drawLane();
-  drawHearts();
+  function detach() {
+    document.removeEventListener("keydown", onKeyDown);
+    document.removeEventListener("keyup", onKeyUp);
+    timers.forEach((id) => window.clearTimeout(id));
+    timers.clear();
+    cleanupMove.forEach((fn) => fn());
+    blockBtn.removeEventListener("pointerdown", blockDown);
+    blockBtn.removeEventListener("pointerup", blockUp);
+    blockBtn.removeEventListener("pointerleave", blockUp);
+    blockBtn.removeEventListener("pointercancel", blockUp);
+    attackHandlers.forEach(([button, handler]) => button.removeEventListener("click", handler));
+  }
+
+  root.querySelector("#abort").addEventListener("click", () => {
+    stop();
+    onBriefing();
+  });
+
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("keyup", onKeyUp);
+
+  place();
+  drawBars();
+  announce("ROUND 1");
+  later(() => announce("FIGHT!", "is-fight"), 850);
+  later(() => {
+    if (!ended) phase = "fight";
+  }, INTRO_MS);
+
   raf = requestAnimationFrame((now) => {
     last = now;
     frame(now);
@@ -308,29 +594,25 @@ function runGame(root, fighter, { onBriefing, onRestart }) {
 
 export function renderLevel(root) {
   const fighter = getFighter(getSelectedFighterId()) || FIGHTERS[0];
-  let run = null;
+  const rival = pickRival(fighter);
+  let fight = null;
 
   function showBriefing() {
-    run?.stop();
-    run = null;
-    root.innerHTML = briefingMarkup(fighter);
-    root.querySelector("#deploy").addEventListener("click", startRun);
+    fight?.stop();
+    fight = null;
+    root.innerHTML = briefingMarkup(fighter, rival);
+    root.querySelector("#deploy").addEventListener("click", startFight);
   }
 
-  function startRun() {
-    root.innerHTML = stageMarkup(fighter);
-    root.querySelector("#abort").addEventListener("click", () => {
-      run?.stop();
-      run = null;
-      showBriefing();
-    });
-    run = runGame(root, fighter, { onBriefing: showBriefing, onRestart: startRun });
+  function startFight() {
+    root.innerHTML = stageMarkup(fighter, rival);
+    fight = runFight(root, fighter, rival, { onBriefing: showBriefing, onRestart: startFight });
   }
 
   showBriefing();
 
   return () => {
-    run?.stop();
-    run = null;
+    fight?.stop();
+    fight = null;
   };
 }
