@@ -575,6 +575,17 @@
   animation: arena-shake 240ms ease;
 }
 
+/* Impact freeze: every fighting animation holds on the hit frame for a beat. */
+.arena.is-hitstop .duelist .fig-body,
+.arena.is-hitstop .duelist .fig-head,
+.arena.is-hitstop .duelist .fig-torso,
+.arena.is-hitstop .duelist .fig-arm,
+.arena.is-hitstop .duelist .fig-leg,
+.arena.is-hitstop .duelist .fig-hair,
+.arena.is-hitstop .duelist .fig-aura {
+  animation-play-state: paused;
+}
+
 .arena__sky {
   position: absolute;
   inset: 0;
@@ -852,6 +863,7 @@
 
 .duelist.is-blocking .fig-guard {
   opacity: 0.9;
+  animation: guard-hold 1s steps(3, end) infinite;
 }
 
 .duelist.is-blocking .fighter-figure {
@@ -874,6 +886,21 @@
 
 .duelist.is-blocking .fig-brow {
   transform: translateY(1.4px) rotate(6deg);
+}
+
+/* Guard impact: the shield snaps and the fighter rocks back for a frame. */
+.duelist.is-guard-hit .fig-body {
+  animation: fig-guard-recoil 200ms steps(2, end);
+}
+
+.duelist.is-guard-hit .fig-guard {
+  animation: guard-impact 200ms steps(2, end);
+}
+
+.duelist.is-guard-hit .fighter-figure {
+  filter:
+    drop-shadow(2px 3px 0 rgba(7, 10, 16, 0.85))
+    drop-shadow(0 0 16px rgba(95, 242, 255, 0.95));
 }
 
 /* ---------- Strikes ---------- */
@@ -1617,6 +1644,43 @@
   }
   50% {
     transform: translateY(3.6px) rotate(0.5deg);
+  }
+}
+
+@keyframes guard-hold {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes guard-impact {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  55% {
+    opacity: 0.4;
+    transform: scale(1.16);
+  }
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+@keyframes fig-guard-recoil {
+  0% {
+    transform: translateX(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(-5px) rotate(-2deg);
+  }
+  100% {
+    transform: translateX(0) rotate(0deg);
   }
 }
 

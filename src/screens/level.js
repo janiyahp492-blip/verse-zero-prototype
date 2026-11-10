@@ -216,6 +216,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
   let moveDir = 0;
   let rivalMoving = false;
   let blocking = false;
+  let blockHeld = false;
   let attackCooldown = 0;
   let rivalTimer = 900;
   let rivalWindup = 0;
@@ -238,6 +239,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     "is-down",
     "is-victory",
     "is-advancing",
+    "is-guard-hit",
   ];
 
   function later(fn, ms) {
@@ -294,6 +296,13 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     arena.classList.add("is-shaking");
   }
 
+  /* Freezes both fighters for a couple of frames on impact, like a fighting game. */
+  function hitstop(ms) {
+    if (reduceMotion) return;
+    arena.classList.add("is-hitstop");
+    later(() => arena.classList.remove("is-hitstop"), ms);
+  }
+
   function spark(x, kind) {
     const el = document.createElement("span");
     el.className = `fx__spark fx__spark--${kind}`;
@@ -337,6 +346,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     floatDamage(rivalX, amount, "player");
     spark(rivalX, "hit");
     flash(p2);
+    hitstop(70);
     shake();
     p2.classList.add("is-hurt");
     later(() => p2.classList.remove("is-hurt"), 240);
@@ -354,8 +364,14 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     drawBars();
     floatDamage(playerX, dealt, blocking ? "block" : "rival");
     spark(playerX, blocking ? "block" : "hit");
-    if (!blocking) {
+    if (blocking) {
+      p1.classList.remove("is-guard-hit");
+      void p1.offsetWidth;
+      p1.classList.add("is-guard-hit");
+      later(() => p1.classList.remove("is-guard-hit"), 200);
+    } else {
       flash(p1);
+      hitstop(80);
       shake();
       p1.classList.add("is-hurt");
       later(() => p1.classList.remove("is-hurt"), 240);
@@ -374,6 +390,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     }
     if (attackCooldown > 0) return;
     attackCooldown = move.cooldown;
+    applyBlock(); // dropping the guard for the attack's recovery
     p1.classList.add(move.cls);
     // The super lunge is a longer sequence than a jab, so it needs its own hold.
     later(() => p1.classList.remove(move.cls), kind === "super" ? 640 : 300);
@@ -465,6 +482,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     attackCooldown = 0;
     moveDir = 0;
     blocking = false;
+    blockHeld = false;
     rivalMoving = false;
     rivalTimer = 900 + Math.random() * 400;
     rivalWindup = 0;
@@ -495,6 +513,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     moveDir = 0;
     rivalMoving = false;
     blocking = false;
+    blockHeld = false;
     p1.classList.remove("is-blocking");
     p1.classList.remove("is-advancing");
     p2.classList.remove("is-advancing", "is-windup");
@@ -598,6 +617,7 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
       if (attackCooldown > 0) attackCooldown -= dt * 1000;
       if (comboTimer > 0) comboTimer -= dt * 1000;
       else combo = 0;
+      applyBlock(); // a held guard resumes as soon as the attack recovers
 
       playerX = Math.min(MAX_X, Math.max(MIN_X, playerX + moveDir * MOVE_SPEED * dt));
       rivalTick(dt);
@@ -623,11 +643,20 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     if (!ended) raf = requestAnimationFrame(frame);
   }
 
-  function setBlocking(on) {
-    if (on && phase !== "fight") on = false;
+  /* Guard is derived from the held key/button, so it engages the moment the
+     hold starts and returns by itself once an attack's recovery ends. */
+  function applyBlock() {
+    const on = blockHeld && phase === "fight" && !ended && attackCooldown <= 0;
+    if (on === blocking) return;
     blocking = on;
     p1.classList.toggle("is-blocking", on);
     blockBtn.setAttribute("aria-pressed", String(on));
+    if (on) p1.classList.remove("is-punch", "is-kick", "is-super");
+  }
+
+  function setBlocking(on) {
+    blockHeld = on;
+    applyBlock();
   }
 
   function onKeyDown(event) {
@@ -697,6 +726,20 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     return [button, handler];
   });
 
+  /* Keyboard holds would stick if focus left the page mid-guard. */
+  function releaseHeldInputs() {
+    moveDir = 0;
+    blockHeld = false;
+    applyBlock();
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) releaseHeldInputs();
+  }
+
+  window.addEventListener("blur", releaseHeldInputs);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
   function stop() {
     ended = true;
     phase = "over";
@@ -707,6 +750,8 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
   function detach() {
     document.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("keyup", onKeyUp);
+    window.removeEventListener("blur", releaseHeldInputs);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
     timers.forEach((id) => window.clearTimeout(id));
     timers.clear();
     cleanupMove.forEach((fn) => fn());
