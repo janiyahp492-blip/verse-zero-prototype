@@ -200,6 +200,39 @@
   transform: translateX(75%) rotate(5deg);
 }
 
+/* Keyboard selection replays the hover zoom + shine sweep. */
+.fighter-card.is-keyed .portrait {
+  animation: card-key-zoom 560ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.fighter-card.is-keyed .fighter-card__frame::before {
+  animation: card-key-sheen 620ms ease;
+}
+
+@keyframes card-key-zoom {
+  0% {
+    transform: none;
+    filter: none;
+  }
+  42% {
+    transform: scale(1.08) translateY(-1%);
+    filter: saturate(1.14) contrast(1.05);
+  }
+  100% {
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes card-key-sheen {
+  from {
+    transform: translateX(-75%) rotate(5deg);
+  }
+  to {
+    transform: translateX(75%) rotate(5deg);
+  }
+}
+
 .fighter-card {
   animation: card-in 420ms ease backwards;
 }

@@ -43,7 +43,7 @@ export function renderCharacter(root) {
       </div>
 
       <footer class="select__foot">
-        <p class="select__hint"><kbd>←</kbd><kbd>→</kbd> select <kbd>Enter</kbd> lock in <kbd>Esc</kbd> back</p>
+        <p class="select__hint"><kbd>←</kbd><kbd>→</kbd> select <kbd>1–6</kbd> pick <kbd>Home</kbd><kbd>End</kbd> ends <kbd>Enter</kbd> lock in <kbd>Esc</kbd> back</p>
         <a class="select__back" href="#/">Back to title</a>
       </footer>
 
@@ -86,6 +86,17 @@ export function renderCharacter(root) {
       </button>`,
   ).join("");
 
+  let hoverTimer = 0;
+
+  function replayHover(card) {
+    if (!card) return;
+    roster.querySelectorAll(".fighter-card.is-keyed").forEach((item) => item.classList.remove("is-keyed"));
+    void card.offsetWidth;
+    card.classList.add("is-keyed");
+    window.clearTimeout(hoverTimer);
+    hoverTimer = window.setTimeout(() => card.classList.remove("is-keyed"), 680);
+  }
+
   function openLockin() {
     const fighter = FIGHTERS[selected];
     lockinName.textContent = fighter.name;
@@ -93,7 +104,7 @@ export function renderCharacter(root) {
     lockin.showModal();
   }
 
-  function select(index) {
+  function select(index, fromKey = false) {
     selected = (index + FIGHTERS.length) % FIGHTERS.length;
     const fighter = FIGHTERS[selected];
 
@@ -101,6 +112,7 @@ export function renderCharacter(root) {
       const isSelected = cardIndex === selected;
       card.classList.toggle("is-selected", isSelected);
       card.setAttribute("aria-pressed", String(isSelected));
+      if (isSelected && fromKey) replayHover(card);
     });
 
     detail.style.setProperty("--accent", fighter.accent);
@@ -134,10 +146,19 @@ export function renderCharacter(root) {
 
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
-      select(selected + 1);
+      select(selected + 1, true);
     } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault();
-      select(selected - 1);
+      select(selected - 1, true);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      select(0, true);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      select(FIGHTERS.length - 1, true);
+    } else if (/^[1-9]$/.test(event.key) && Number(event.key) <= FIGHTERS.length) {
+      event.preventDefault();
+      select(Number(event.key) - 1, true);
     } else if (event.key === "Enter") {
       if (event.target.closest("a")) return;
       event.preventDefault();
@@ -150,5 +171,8 @@ export function renderCharacter(root) {
   document.addEventListener("keydown", onKey);
   select(selected);
 
-  return () => document.removeEventListener("keydown", onKey);
+  return () => {
+    window.clearTimeout(hoverTimer);
+    document.removeEventListener("keydown", onKey);
+  };
 }
