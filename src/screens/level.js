@@ -375,14 +375,13 @@ function runFight(root, fighter, rival, { onBriefing, onRestart }) {
     if (attackCooldown > 0) return;
     attackCooldown = move.cooldown;
     p1.classList.add(move.cls);
-    later(() => p1.classList.remove(move.cls), 300);
+    // The super lunge is a longer sequence than a jab, so it needs its own hold.
+    later(() => p1.classList.remove(move.cls), kind === "super" ? 640 : 300);
 
     if (kind === "super") {
       meter = 0;
       arena.classList.add("is-super");
       later(() => arena.classList.remove("is-super"), 900);
-      p1.classList.add("is-super");
-      later(() => p1.classList.remove("is-super"), 480);
       announce("SUPER FLASH!", "is-super", 760);
     }
 

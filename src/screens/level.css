@@ -685,12 +685,34 @@
   height: auto;
   overflow: visible;
   transform: scaleX(var(--face, 1));
-  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 8px rgba(95, 242, 255, 0.3));
+  /* Chunked edges and a hard offset shadow read as arcade sprite art. */
+  shape-rendering: crispEdges;
+  image-rendering: pixelated;
+  filter:
+    drop-shadow(2px 3px 0 rgba(7, 10, 16, 0.85))
+    drop-shadow(0 9px 12px rgba(0, 0, 0, 0.65))
+    drop-shadow(0 0 8px rgba(95, 242, 255, 0.3));
   transition: filter 160ms ease;
 }
 
 .duelist--p2 .fighter-figure {
-  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 8px rgba(255, 79, 163, 0.32));
+  filter:
+    drop-shadow(2px 3px 0 rgba(7, 10, 16, 0.85))
+    drop-shadow(0 9px 12px rgba(0, 0, 0, 0.65))
+    drop-shadow(0 0 8px rgba(255, 79, 163, 0.32));
+}
+
+/* Halftone dither over the fighter keeps the flat cel fills from looking glossy. */
+.duelist::before {
+  content: "";
+  position: absolute;
+  inset: 2% 4% 6%;
+  z-index: 3;
+  pointer-events: none;
+  background-image: repeating-conic-gradient(rgba(7, 10, 16, 0.55) 0 25%, transparent 0 50%);
+  background-size: 4px 4px;
+  opacity: 0.18;
+  mix-blend-mode: multiply;
 }
 
 .fig-body,
@@ -856,68 +878,73 @@
 
 /* ---------- Strikes ---------- */
 .duelist.is-punch .fig-arm--front {
-  animation: fig-punch 300ms cubic-bezier(0.2, 1.3, 0.5, 1);
+  animation: fig-punch 300ms steps(2, end);
 }
 
 .duelist.is-punch .fig-arm--back {
-  animation: fig-punch-back 300ms ease-out;
+  animation: fig-punch-back 300ms steps(2, end);
 }
 
 .duelist.is-punch .fig-torso {
-  animation: fig-torso-twist 300ms ease-out;
+  animation: fig-torso-twist 300ms steps(2, end);
 }
 
 .duelist.is-punch .fig-head {
-  animation: fig-head-snap 300ms ease-out;
+  animation: fig-head-snap 300ms steps(2, end);
 }
 
 .duelist.is-punch .fig-body {
-  animation: fig-lean 300ms ease-out;
+  animation: fig-lean 300ms steps(2, end);
 }
 
 .duelist.is-kick .fig-leg--front {
-  animation: fig-kick 380ms cubic-bezier(0.2, 1.25, 0.5, 1);
+  animation: fig-kick 380ms steps(2, end);
 }
 
 .duelist.is-kick .fig-arm--back {
-  animation: fig-kick-balance 380ms ease-out;
+  animation: fig-kick-balance 380ms steps(2, end);
 }
 
 .duelist.is-kick .fig-torso {
-  animation: fig-torso-twist 380ms ease-out;
+  animation: fig-torso-twist 380ms steps(2, end);
 }
 
 .duelist.is-kick .fig-head {
-  animation: fig-head-snap 380ms ease-out;
+  animation: fig-head-snap 380ms steps(2, end);
 }
 
 .duelist.is-kick .fig-body {
-  animation: fig-kick-lean 380ms ease-out;
+  animation: fig-kick-lean 380ms steps(2, end);
+}
+
+/* ---------- Super lunge (stepped to read as sprite frames) ---------- */
+.duelist.is-super .fig-body {
+  animation: fig-super-lunge 620ms steps(2, end);
 }
 
 .duelist.is-super .fig-arm--front {
-  animation: fig-super-punch 460ms cubic-bezier(0.2, 1.3, 0.5, 1);
+  animation: fig-super-punch 620ms steps(2, end);
 }
 
 .duelist.is-super .fig-arm--back {
-  animation: fig-punch-back 460ms ease-out;
+  animation: fig-punch-back 620ms steps(2, end);
 }
 
 .duelist.is-super .fig-torso {
-  animation: fig-torso-twist 460ms ease-out;
+  animation: fig-torso-twist 620ms steps(2, end);
 }
 
 .duelist.is-super .fig-head {
-  animation: fig-head-snap 460ms ease-out;
+  animation: fig-head-snap 620ms steps(2, end);
 }
 
-.duelist.is-super .fig-body {
-  animation: fig-lean 460ms ease-out;
+.duelist.is-super .fig-hair {
+  animation: fig-super-hair 620ms steps(2, end);
 }
 
 .duelist.is-super .fig-aura {
   opacity: 1;
-  animation: aura-burst 640ms ease-out;
+  animation: aura-burst 640ms steps(3, end);
 }
 
 .duelist.is-punch .fig-brow,
@@ -990,11 +1017,11 @@
 }
 
 .duelist.is-strike .fig-arm--back {
-  animation: fig-punch 300ms cubic-bezier(0.2, 1.3, 0.5, 1);
+  animation: fig-punch 300ms steps(2, end);
 }
 
 .duelist.is-strike .fig-body {
-  animation: fig-lean 300ms ease-out;
+  animation: fig-lean 300ms steps(2, end);
 }
 
 /* ---------- Movement ---------- */
@@ -1165,7 +1192,7 @@
   inset: 0;
   z-index: 3;
   background: radial-gradient(circle at 32% 45%, rgba(95, 242, 255, 0.55), rgba(255, 79, 163, 0.35) 55%, transparent 75%);
-  animation: super-flash 900ms ease-out forwards;
+  animation: super-flash 900ms steps(4, end) forwards;
   pointer-events: none;
 }
 
@@ -1742,15 +1769,67 @@
   }
 }
 
+@keyframes fig-super-lunge {
+  0% {
+    transform: translateX(0) scale(1);
+    filter: saturate(1);
+  }
+  12% {
+    transform: translateX(-6px) scale(0.97);
+    filter: saturate(1.15) contrast(1.05);
+  }
+  24% {
+    transform: translateX(-8px) scale(0.96);
+    filter: saturate(1.3) contrast(1.1);
+  }
+  42% {
+    transform: translateX(15px) scale(1.07);
+    filter: brightness(1.4) saturate(1.8) contrast(1.2);
+  }
+  58% {
+    transform: translateX(13px) scale(1.05);
+    filter: brightness(1.18) saturate(1.55) contrast(1.15);
+  }
+  76% {
+    transform: translateX(6px) scale(1.02);
+    filter: brightness(1.06) saturate(1.3) contrast(1.08);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    filter: saturate(1);
+  }
+}
+
 @keyframes fig-super-punch {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  24% {
+    transform: rotate(14deg) scale(0.98);
+  }
+  42% {
+    transform: rotate(-78deg) scale(1.08);
+  }
+  62% {
+    transform: rotate(-70deg) scale(1.03);
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes fig-super-hair {
   0% {
     transform: rotate(0deg);
   }
   24% {
-    transform: rotate(-78deg) scale(1.06);
+    transform: rotate(-5deg) translateY(1px);
   }
-  58% {
-    transform: rotate(-70deg);
+  42% {
+    transform: rotate(10deg) translateY(-2px);
+  }
+  70% {
+    transform: rotate(5deg) translateY(-1px);
   }
   100% {
     transform: rotate(0deg);
